@@ -86,8 +86,13 @@ JOB DESCRIPTION:
     }
 
     async with httpx.AsyncClient(timeout=90) as client:
-        response = await client.post(URL, headers=headers, json=body)
-        response.raise_for_status()
+    response = await client.post(URL, headers=headers, json=body)
+
+    if response.status_code != 200:
+        print("OPENROUTER STATUS:", response.status_code)
+        print("OPENROUTER RESPONSE:", response.text)
+
+    response.raise_for_status()
 
     content = response.json()["choices"][0]["message"]["content"].strip()
 
