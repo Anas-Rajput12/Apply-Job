@@ -11,46 +11,120 @@ from app.services.ai import analyze_job, generate_cover_letter
 router = APIRouter()
 
 
-# --------------------------------------------------
-# Request Models
-# --------------------------------------------------
+# ============================================================
+# REQUEST MODELS
+# ============================================================
 
 class AnalyzeBody(BaseModel):
-    resume_id: int
-    job_description: str
+    # Standard backend fields
+    resume_id: int | None = None
+    job_description: str | None = None
+
+    # Optional job information
     title: str = ""
     company: str = ""
     url: str = ""
 
+    # Support frontend camelCase fields
+    resumeId: int | None = None
+    jobDescription: str | None = None
+
+    # Support simple "job" field
+    job: str | None = None
+
+    def get_resume_id(self):
+        return self.resume_id or self.resumeId
+
+    def get_job_description(self):
+        return (
+            self.job_description
+            or self.jobDescription
+            or self.job
+            or ""
+        )
+
 
 class CoverLetterBody(BaseModel):
-    resume_id: int
-    job_description: str
+    resume_id: int | None = None
+    job_description: str | None = None
     company: str = ""
 
+    resumeId: int | None = None
+    jobDescription: str | None = None
+    job: str | None = None
 
-# --------------------------------------------------
-# Analyze Job
-# --------------------------------------------------
+    def get_resume_id(self):
+        return self.resume_id or self.resumeId
+
+    def get_job_description(self):
+        return (
+            self.job_description
+            or self.jobDescription
+            or self.job
+            or ""
+        )
+
+
+# ============================================================
+# ANALYZE JOB
+# ============================================================
 
 @router.post("/analyze")
 async def analyze(
     body: AnalyzeBody,
     user_id: int = Depends(get_user_id)
 ):
+
+    # --------------------------------------------------------
+    # Get normalized values
+    # --------------------------------------------------------
+
+    resume_id = body.get_resume_id()
+    job_description = body.get_job_description()
+
+    # --------------------------------------------------------
+    # Validate resume ID
+    # --------------------------------------------------------
+
+    if not resume_id:
+        raise HTTPException(
+            status_code=400,
+            detail="resume_id is required"
+        )
+
+    # --------------------------------------------------------
+    # Validate job description
+    # --------------------------------------------------------
+
+    if not job_description.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="job_description is required"
+        )
+
+    # --------------------------------------------------------
+    # Get resume from PostgreSQL
+    # --------------------------------------------------------
+
     conn = get_db()
 
     try:
-        # Get resume belonging to current user
         with conn.cursor() as cur:
+
             cur.execute(
                 """
-                SELECT id, filename, text
+                SELECT
+                    id,
+                    filename,
+                    text
                 FROM resumes
                 WHERE id = %s
                 AND user_id = %s
                 """,
-                (body.resume_id, user_id)
+                (
+                    resume_id,
+                    user_id
+                )
             )
 
             resume = cur.fetchone()
@@ -58,11 +132,19 @@ async def analyze(
     finally:
         conn.close()
 
+    # --------------------------------------------------------
+    # Resume not found
+    # --------------------------------------------------------
+
     if not resume:
         raise HTTPException(
             status_code=404,
             detail="Resume not found"
         )
+
+    # --------------------------------------------------------
+    # Resume text
+    # --------------------------------------------------------
 
     cv_text = resume["text"]
 
@@ -72,31 +154,27 @@ async def analyze(
             detail="Resume text is empty"
         )
 
-    if not body.job_description.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="Job description is required"
-        )
-
-    # --------------------------------------------------
-    # AI Analysis
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Analyze using AI
+    # --------------------------------------------------------
 
     result = await analyze_job(
         cv=cv_text,
-        job=body.job_description
+        job=job_description
     )
 
-    # --------------------------------------------------
-    # Save job analysis to PostgreSQL
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Save result to PostgreSQL
+    # --------------------------------------------------------
 
     conn = get_db()
 
     try:
+
         analysis_json = json.dumps(result)
 
         with conn.cursor() as cur:
+
             cur.execute(
                 """
                 INSERT INTO jobs (
@@ -107,7 +185,14 @@ async def analyze(
                     description,
                     analysis_json
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
                 RETURNING id
                 """,
                 (
@@ -115,7 +200,7 @@ async def analyze(
                     body.title,
                     body.company,
                     body.url,
-                    body.job_description,
+                    job_description,
                     analysis_json
                 )
             )
@@ -131,39 +216,82 @@ async def analyze(
     finally:
         conn.close()
 
+    # --------------------------------------------------------
+    # Return result
+    # --------------------------------------------------------
+
     return {
         "job_id": job_id,
         "analysis": result
     }
 
 
-# --------------------------------------------------
-# Generate Cover Letter
-# --------------------------------------------------
+# ============================================================
+# GENERATE COVER LETTER
+# ============================================================
 
 @router.post("/cover-letter")
 async def cover_letter(
     body: CoverLetterBody,
     user_id: int = Depends(get_user_id)
 ):
+
+    # --------------------------------------------------------
+    # Normalize values
+    # --------------------------------------------------------
+
+    resume_id = body.get_resume_id()
+    job_description = body.get_job_description()
+
+    # --------------------------------------------------------
+    # Validate
+    # --------------------------------------------------------
+
+    if not resume_id:
+        raise HTTPException(
+            status_code=400,
+            detail="resume_id is required"
+        )
+
+    if not job_description.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="job_description is required"
+        )
+
+    # --------------------------------------------------------
+    # Get resume
+    # --------------------------------------------------------
+
     conn = get_db()
 
     try:
         with conn.cursor() as cur:
+
             cur.execute(
                 """
-                SELECT id, filename, text
+                SELECT
+                    id,
+                    filename,
+                    text
                 FROM resumes
                 WHERE id = %s
                 AND user_id = %s
                 """,
-                (body.resume_id, user_id)
+                (
+                    resume_id,
+                    user_id
+                )
             )
 
             resume = cur.fetchone()
 
     finally:
         conn.close()
+
+    # --------------------------------------------------------
+    # Resume not found
+    # --------------------------------------------------------
 
     if not resume:
         raise HTTPException(
@@ -179,19 +307,13 @@ async def cover_letter(
             detail="Resume text is empty"
         )
 
-    if not body.job_description.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="Job description is required"
-        )
-
-    # --------------------------------------------------
-    # Generate Cover Letter
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Generate cover letter
+    # --------------------------------------------------------
 
     result = await generate_cover_letter(
         cv=cv_text,
-        job=body.job_description,
+        job=job_description,
         company=body.company
     )
 
@@ -200,18 +322,21 @@ async def cover_letter(
     }
 
 
-# --------------------------------------------------
-# Get User's Saved Jobs
-# --------------------------------------------------
+# ============================================================
+# GET ALL SAVED JOBS
+# ============================================================
 
 @router.get("")
 def get_jobs(
     user_id: int = Depends(get_user_id)
 ):
+
     conn = get_db()
 
     try:
+
         with conn.cursor() as cur:
+
             cur.execute(
                 """
                 SELECT
@@ -241,10 +366,12 @@ def get_jobs(
         analysis = None
 
         if job["analysis_json"]:
+
             try:
                 analysis = json.loads(
                     job["analysis_json"]
                 )
+
             except Exception:
                 analysis = None
 
@@ -263,19 +390,22 @@ def get_jobs(
     return result
 
 
-# --------------------------------------------------
-# Get Single Job
-# --------------------------------------------------
+# ============================================================
+# GET SINGLE JOB
+# ============================================================
 
 @router.get("/{job_id}")
 def get_job(
     job_id: int,
     user_id: int = Depends(get_user_id)
 ):
+
     conn = get_db()
 
     try:
+
         with conn.cursor() as cur:
+
             cur.execute(
                 """
                 SELECT
@@ -290,7 +420,10 @@ def get_job(
                 WHERE id = %s
                 AND user_id = %s
                 """,
-                (job_id, user_id)
+                (
+                    job_id,
+                    user_id
+                )
             )
 
             job = cur.fetchone()
@@ -298,21 +431,35 @@ def get_job(
     finally:
         conn.close()
 
+    # --------------------------------------------------------
+    # Job not found
+    # --------------------------------------------------------
+
     if not job:
         raise HTTPException(
             status_code=404,
             detail="Job not found"
         )
 
+    # --------------------------------------------------------
+    # Parse analysis
+    # --------------------------------------------------------
+
     analysis = None
 
     if job["analysis_json"]:
+
         try:
             analysis = json.loads(
                 job["analysis_json"]
             )
+
         except Exception:
             analysis = None
+
+    # --------------------------------------------------------
+    # Return job
+    # --------------------------------------------------------
 
     return {
         "id": job["id"],
