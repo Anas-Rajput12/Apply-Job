@@ -167,44 +167,46 @@ export default function App() {
     }
   }
 
-  async function analyzeJob() {
-    if (!resume.trim()) {
-      Alert.alert("CV required", "Upload or paste your CV first.");
-      return;
-    }
-
-    if (!job.trim()) {
-      Alert.alert(
-        "Job description required",
-        "Paste the job description first."
-      );
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      const result = await apiAuth(
-        "/api/jobs/analyze",
-        token,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            resume_text: resume,
-            job_description: job,
-            title,
-            company
-          })
-        }
-      );
-
-      setAnalysis(result);
-    } catch (error: any) {
-      Alert.alert("Analysis Error", error.message);
-    } finally {
-      setLoading(false);
-    }
+ async function analyzeJob() {
+  if (!resume.trim()) {
+    Alert.alert("CV required", "Upload or paste your CV first.");
+    return;
   }
+
+  if (!job.trim()) {
+    Alert.alert(
+      "Job description required",
+      "Paste the job description first."
+    );
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    const result = await apiAuth(
+      "/api/jobs/analyze",
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          resume_text: resume,
+          job_description: job,
+          title,
+          company
+        })
+      }
+    );
+
+    console.log("ANALYSIS RESULT:", result);
+
+    setAnalysis(result.analysis);
+  } catch (error: any) {
+    Alert.alert("Analysis Error", error.message);
+  } finally {
+    setLoading(false);
+  }
+}
 
   async function generateCoverLetter() {
     try {
