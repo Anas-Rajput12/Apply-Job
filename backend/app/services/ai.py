@@ -2,28 +2,61 @@ import json
 import os
 import httpx
 
+
 URL = os.getenv(
     "OPENROUTER_URL",
     "https://openrouter.ai/api/v1/chat/completions"
 )
+
 KEY = os.getenv("OPENROUTER_API_KEY", "")
-MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-20b")
+
+MODEL = os.getenv(
+    "OPENROUTER_MODEL",
+    "openai/gpt-oss-20b:free"
+)
+
 
 def demo_analysis(cv: str, job: str) -> dict:
     cv_lower = cv.lower()
     job_lower = job.lower()
 
     skills = [
-        "python", "react", "next.js", "typescript", "javascript",
-        "fastapi", "postgresql", "sql", "docker", "aws", "git",
-        "ai", "llm", "firebase", "supabase"
+        "python",
+        "react",
+        "next.js",
+        "typescript",
+        "javascript",
+        "fastapi",
+        "postgresql",
+        "sql",
+        "docker",
+        "aws",
+        "git",
+        "ai",
+        "llm",
+        "firebase",
+        "supabase"
     ]
 
-    required = [skill for skill in skills if skill in job_lower]
-    matched = [skill for skill in required if skill in cv_lower]
-    missing = [skill for skill in required if skill not in cv_lower]
+    required = [
+        skill for skill in skills
+        if skill in job_lower
+    ]
 
-    score = round((len(matched) / max(len(required), 1)) * 100, 1)
+    matched = [
+        skill for skill in required
+        if skill in cv_lower
+    ]
+
+    missing = [
+        skill for skill in required
+        if skill not in cv_lower
+    ]
+
+    score = round(
+        (len(matched) / max(len(required), 1)) * 100,
+        1
+    )
 
     return {
         "match_score": score,
@@ -35,9 +68,14 @@ def demo_analysis(cv: str, job: str) -> dict:
         "ats_keywords": required,
         "strengths": matched[:5],
         "weaknesses": missing[:5],
-        "recommendation": "Apply" if score >= 60 else "Consider skill gap first",
+        "recommendation": (
+            "Apply"
+            if score >= 60
+            else "Consider skill gap first"
+        ),
         "mode": "demo"
     }
+
 
 async def analyze_job(cv: str, job: str) -> dict:
     if not KEY:
@@ -81,27 +119,53 @@ JOB DESCRIPTION:
 
     body = {
         "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
         "temperature": 0.2,
     }
 
     async with httpx.AsyncClient(timeout=90) as client:
-    response = await client.post(URL, headers=headers, json=body)
+        response = await client.post(
+            URL,
+            headers=headers,
+            json=body
+        )
 
-    if response.status_code != 200:
-        print("OPENROUTER STATUS:", response.status_code)
-        print("OPENROUTER RESPONSE:", response.text)
+        if response.status_code != 200:
+            print(
+                "OPENROUTER STATUS:",
+                response.status_code
+            )
+            print(
+                "OPENROUTER RESPONSE:",
+                response.text
+            )
 
-    response.raise_for_status()
+        response.raise_for_status()
 
     content = response.json()["choices"][0]["message"]["content"].strip()
 
     if content.startswith("```"):
-        content = content.replace("```json", "").replace("```", "").strip()
+        content = (
+            content
+            .replace("```json", "")
+            .replace("```", "")
+            .strip()
+        )
 
     return json.loads(content)
 
-async def generate_cover_letter(cv: str, job: str, company: str = "") -> str:
+
+async def generate_cover_letter(
+    cv: str,
+    job: str,
+    company: str = ""
+) -> str:
+
     if not KEY:
         return f"""Dear Hiring Team at {company or 'the company'},
 
@@ -136,12 +200,32 @@ JOB DESCRIPTION:
 
     body = {
         "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
         "temperature": 0.4,
     }
 
     async with httpx.AsyncClient(timeout=90) as client:
-        response = await client.post(URL, headers=headers, json=body)
+        response = await client.post(
+            URL,
+            headers=headers,
+            json=body
+        )
+
+        if response.status_code != 200:
+            print(
+                "OPENROUTER COVER LETTER STATUS:",
+                response.status_code
+            )
+            print(
+                "OPENROUTER COVER LETTER RESPONSE:",
+                response.text
+            )
+
         response.raise_for_status()
 
     return response.json()["choices"][0]["message"]["content"]
