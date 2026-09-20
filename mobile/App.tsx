@@ -17,24 +17,6 @@ import * as DocumentPicker from "expo-document-picker";
 import { API_BASE_URL } from "./src/config";
 import { api, apiAuth } from "./src/api";
 
-type Analysis = {
-  match_score: number;
-  required_skills: string[];
-  matched_skills: string[];
-  missing_skills: string[];
-  experience_match: string;
-  education_match: string;
-  ats_keywords: string[];
-  strengths: string[];
-  weaknesses: string[];
-  recommendation: string;
-};
-
-type AnalysisResponse = {
-  job_id: number;
-  analysis: Analysis;
-};
-
 export default function App() {
   const [token, setToken] = useState("");
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -47,16 +29,14 @@ export default function App() {
   const [title, setTitle] = useState("");
   const [company, setCompany] = useState("");
 
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [analysis, setAnalysis] = useState<any>(null);
   const [letter, setLetter] = useState("");
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem("token").then((value) => {
-      if (value) {
-        setToken(value);
-      }
+      if (value) setToken(value);
     });
   }, []);
 
@@ -69,7 +49,7 @@ export default function App() {
         {
           method: "POST",
           body: JSON.stringify({
-            email: email.trim(),
+            email,
             password
           })
         }
@@ -82,25 +62,19 @@ export default function App() {
 
       setToken(result.access_token);
     } catch (error: any) {
-      Alert.alert(
-        "Error",
-        error.message || "Authentication failed"
-      );
+      Alert.alert("Error", error.message);
     } finally {
       setLoading(false);
     }
   }
 
   async function uploadCV() {
-    const result =
-      await DocumentPicker.getDocumentAsync({
-        type: "application/pdf",
-        copyToCacheDirectory: true
-      });
+    const result = await DocumentPicker.getDocumentAsync({
+      type: "application/pdf",
+      copyToCacheDirectory: true,
+    });
 
-    if (result.canceled) {
-      return;
-    }
+    if (result.canceled) return;
 
     const file = result.assets[0];
 
@@ -111,6 +85,7 @@ export default function App() {
 
       const form = new FormData();
 
+      // Expo Web
       if (file.base64) {
         const response = await fetch(file.base64);
         const blob = await response.blob();
@@ -121,23 +96,17 @@ export default function App() {
             [blob],
             file.name || "resume.pdf",
             {
-              type:
-                file.mimeType ||
-                "application/pdf"
+              type: file.mimeType || "application/pdf",
             }
           )
         );
       } else {
-        form.append(
-          "file",
-          {
-            uri: file.uri,
-            name: file.name || "resume.pdf",
-            type:
-              file.mimeType ||
-              "application/pdf"
-          } as any
-        );
+        // Native Android / iOS
+        form.append("file", {
+          uri: file.uri,
+          name: file.name || "resume.pdf",
+          type: file.mimeType || "application/pdf",
+        } as any);
       }
 
       console.log(
@@ -150,296 +119,123 @@ export default function App() {
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${token}`,
           },
-          body: form
+          body: form,
         }
       );
 
-      const responseText =
-        await response.text();
+      const responseText = await response.text();
 
-      console.log(
-        "UPLOAD STATUS:",
-        response.status
-      );
-
-      console.log(
-        "UPLOAD RESPONSE:",
-        responseText
-      );
+      console.log("UPLOAD STATUS:", response.status);
+      console.log("UPLOAD RESPONSE:", responseText);
 
       let data: any;
 
       try {
         data = JSON.parse(responseText);
       } catch {
-        data = {
-          detail: responseText
-        };
+        data = { detail: responseText };
       }
 
       if (!response.ok) {
         const detail =
           typeof data.detail === "string"
             ? data.detail
-            : JSON.stringify(
-                data.detail,
-                null,
-                2
-              );
+            : JSON.stringify(data.detail, null, 2);
 
         throw new Error(
           `HTTP ${response.status}: ${detail}`
         );
       }
 
-      setResume(data.text || "");
+      setResume(data.text);
 
       Alert.alert(
         "CV Uploaded",
         "Your PDF text was extracted successfully."
       );
     } catch (error: any) {
-      console.log(
-        "UPLOAD ERROR:",
-        error
-      );
+      console.log("UPLOAD ERROR:", error);
 
       Alert.alert(
         "Upload Error",
-        error.message ||
-          "CV upload failed"
+        error.message || "CV upload failed"
       );
     } finally {
       setLoading(false);
     }
   }
 
-  async function analyzeJob() {
-    if (!resume.trim()) {
-      Alert.alert(
-        "CV required",
-        "Upload or paste your CV first."
-      );
-      return;
-    }
+ async function analyzeJob() {
+  if (!resume.trim()) {
+    Alert.alert("CV required", "Upload or paste your CV first.");
+    return;
+  }
 
-    if (!job.trim()) {
-      Alert.alert(
-        "Job description required",
-        "Paste the job description first."
-      );
-      return;
-    }
+  if (!job.trim()) {
+    Alert.alert(
+      "Job description required",
+      "Paste the job description first."
+    );
+    return;
+  }
 
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      setAnalysis(null);
-      setLetter("");
-
-      const result =
-        await apiAuth(
-          "/api/jobs/analyze",
-          token,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              resume_text: resume,
-              job_description: job,
-              title,
-              company
-            })
-          }
-        );
-
-      console.log(
-        "========== ANALYSIS RESULT =========="
-      );
-
-      console.log(
-        JSON.stringify(
-          result,
-          null,
-          2
-        )
-      );
-
-      console.log(
-        "======================================"
-      );
-
-      /*
-       * Backend response:
-       *
-       * {
-       *   job_id: 2,
-       *   analysis: {
-       *     match_score: 90,
-       *     matched_skills: [...]
-       *   }
-       * }
-       */
-
-      if (
-        !result ||
-        !result.analysis
-      ) {
-        throw new Error(
-          "Backend returned no analysis data."
-        );
+    const result = await apiAuth(
+      "/api/jobs/analyze",
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          resume_text: resume,
+          job_description: job,
+          title,
+          company
+        })
       }
+    );
 
-      const aiAnalysis =
-        result.analysis;
+    console.log("ANALYSIS RESULT:", result);
 
-      setAnalysis({
-        match_score:
-          Number(
-            aiAnalysis.match_score
-          ) || 0,
-
-        required_skills:
-          Array.isArray(
-            aiAnalysis.required_skills
-          )
-            ? aiAnalysis.required_skills
-            : [],
-
-        matched_skills:
-          Array.isArray(
-            aiAnalysis.matched_skills
-          )
-            ? aiAnalysis.matched_skills
-            : [],
-
-        missing_skills:
-          Array.isArray(
-            aiAnalysis.missing_skills
-          )
-            ? aiAnalysis.missing_skills
-            : [],
-
-        experience_match:
-          aiAnalysis.experience_match ||
-          "Review required",
-
-        education_match:
-          aiAnalysis.education_match ||
-          "Review required",
-
-        ats_keywords:
-          Array.isArray(
-            aiAnalysis.ats_keywords
-          )
-            ? aiAnalysis.ats_keywords
-            : [],
-
-        strengths:
-          Array.isArray(
-            aiAnalysis.strengths
-          )
-            ? aiAnalysis.strengths
-            : [],
-
-        weaknesses:
-          Array.isArray(
-            aiAnalysis.weaknesses
-          )
-            ? aiAnalysis.weaknesses
-            : [],
-
-        recommendation:
-          aiAnalysis.recommendation ||
-          "Review required"
-      });
-
-      Alert.alert(
-        "Analysis Complete",
-        `Your job match score is ${
-          Number(
-            aiAnalysis.match_score
-          ) || 0
-        }%`
-      );
-    } catch (error: any) {
-      console.log(
-        "ANALYSIS ERROR:",
-        error
-      );
-
-      Alert.alert(
-        "Analysis Error",
-        error.message ||
-          "Job analysis failed"
-      );
-    } finally {
-      setLoading(false);
-    }
+    setAnalysis(result.analysis);
+  } catch (error: any) {
+    Alert.alert("Analysis Error", error.message);
+  } finally {
+    setLoading(false);
   }
+}
 
   async function generateCoverLetter() {
-    if (!resume.trim()) {
-      Alert.alert(
-        "CV required",
-        "Upload or paste your CV first."
-      );
-      return;
-    }
-
-    if (!job.trim()) {
-      Alert.alert(
-        "Job description required",
-        "Paste the job description first."
-      );
-      return;
-    }
-
     try {
       setLoading(true);
 
-      const result =
-        await apiAuth(
-          "/api/jobs/cover-letter",
-          token,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              resume_text: resume,
-              job_description: job,
-              title,
-              company
-            })
-          }
-        );
+      const result = await apiAuth(
+        "/api/jobs/cover-letter",
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            resume_text: resume,
+            job_description: job,
+            title,
+            company
+          })
+        }
+      );
 
-      setLetter(
-        result.cover_letter || ""
-      );
+      setLetter(result.cover_letter);
     } catch (error: any) {
-      Alert.alert(
-        "AI Error",
-        error.message ||
-          "Cover letter generation failed"
-      );
+      Alert.alert("AI Error", error.message);
     } finally {
       setLoading(false);
     }
   }
 
   async function saveApplication() {
-    if (!analysis) {
-      Alert.alert(
-        "Analysis required",
-        "Analyze the job before saving it."
-      );
-      return;
-    }
-
     try {
-      setLoading(true);
-
       await apiAuth(
         "/api/applications",
         token,
@@ -448,10 +244,7 @@ export default function App() {
           body: JSON.stringify({
             job_title: title,
             company,
-            match_score:
-              Number(
-                analysis.match_score
-              ) || 0,
+            match_score: analysis?.match_score || 0,
             status: "SAVED",
             cover_letter: letter
           })
@@ -463,63 +256,37 @@ export default function App() {
         "Application added to your tracker."
       );
 
-      await loadApplications();
+      loadApplications();
     } catch (error: any) {
-      Alert.alert(
-        "Error",
-        error.message ||
-          "Could not save application"
-      );
-    } finally {
-      setLoading(false);
+      Alert.alert("Error", error.message);
     }
   }
 
   async function loadApplications() {
     try {
-      const data =
-        await apiAuth(
-          "/api/applications",
-          token
-        );
+      const data = await apiAuth(
+        "/api/applications",
+        token
+      );
 
-      setApplications(
-        Array.isArray(data)
-          ? data
-          : []
-      );
-    } catch (error) {
-      console.log(
-        "LOAD APPLICATIONS ERROR:",
-        error
-      );
+      setApplications(data);
+    } catch {
+      // User can retry with the refresh button.
     }
   }
 
   async function logout() {
-    await AsyncStorage.removeItem(
-      "token"
-    );
-
+    await AsyncStorage.removeItem("token");
     setToken("");
-    setAnalysis(null);
-    setLetter("");
-    setApplications([]);
   }
 
   if (!token) {
     return (
-      <SafeAreaView
-        style={styles.container}
-      >
+      <SafeAreaView style={styles.container}>
         <View style={styles.authCard}>
-          <Text style={styles.logo}>
-            ApplyAI
-          </Text>
+          <Text style={styles.logo}>ApplyAI</Text>
 
-          <Text
-            style={styles.subtitle}
-          >
+          <Text style={styles.subtitle}>
             Your AI Job Application Agent
           </Text>
 
@@ -572,33 +339,20 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView
-      style={styles.container}
-    >
+    <SafeAreaView style={styles.container}>
       <ScrollView
-        contentContainerStyle={
-          styles.content
-        }
+        contentContainerStyle={styles.content}
       >
         <View style={styles.header}>
           <View>
-            <Text style={styles.logo}>
-              ApplyAI
-            </Text>
-
-            <Text
-              style={styles.subtitle}
-            >
+            <Text style={styles.logo}>ApplyAI</Text>
+            <Text style={styles.subtitle}>
               AI Job Application Agent
             </Text>
           </View>
 
-          <Pressable
-            onPress={logout}
-          >
-            <Text
-              style={styles.logout}
-            >
+          <Pressable onPress={logout}>
+            <Text style={styles.logout}>
               Logout
             </Text>
           </Pressable>
@@ -620,14 +374,6 @@ export default function App() {
             value={resume}
             onChangeText={setResume}
           />
-
-          {resume.trim() !== "" && (
-            <Text
-              style={styles.successText}
-            >
-              ✓ CV text loaded
-            </Text>
-          )}
         </Card>
 
         <Card title="2. Job Details">
@@ -665,125 +411,54 @@ export default function App() {
         {loading && (
           <ActivityIndicator
             size="large"
-            style={{
-              marginBottom: 16
-            }}
+            style={{ marginBottom: 16 }}
           />
         )}
 
         {analysis && (
           <Card title="3. AI Analysis">
-            <View
-              style={styles.scoreBox}
-            >
-              <Text
-                style={styles.score}
-              >
-                {Number(
-                  analysis.match_score
-                ) || 0}
-                %
-              </Text>
+            <Text style={styles.score}>
+              {analysis.match_score}%
+            </Text>
 
-              <Text
-                style={styles.center}
-              >
-                Match Score
-              </Text>
-            </View>
+            <Text style={styles.center}>
+              Match Score
+            </Text>
 
-            <Text
-              style={styles.recommend}
-            >
+            <Text style={styles.recommend}>
               {analysis.recommendation}
             </Text>
 
             <Label
               title="Matched Skills"
-              items={
-                analysis.matched_skills
-              }
+              items={analysis.matched_skills}
             />
 
             <Label
               title="Missing Skills"
-              items={
-                analysis.missing_skills
-              }
+              items={analysis.missing_skills}
             />
 
             <Label
               title="ATS Keywords"
-              items={
-                analysis.ats_keywords
-              }
+              items={analysis.ats_keywords}
             />
-
-            <Label
-              title="Strengths"
-              items={
-                analysis.strengths
-              }
-            />
-
-            <Label
-              title="Weaknesses"
-              items={
-                analysis.weaknesses
-              }
-            />
-
-            <Text
-              style={styles.label}
-            >
-              Experience Match
-            </Text>
-
-            <Text
-              style={[
-                styles.body,
-                styles.sectionText
-              ]}
-            >
-              {analysis.experience_match}
-            </Text>
-
-            <Text
-              style={styles.label}
-            >
-              Education Match
-            </Text>
-
-            <Text
-              style={[
-                styles.body,
-                styles.sectionText
-              ]}
-            >
-              {analysis.education_match}
-            </Text>
 
             <Button
               title="Generate Cover Letter"
-              onPress={
-                generateCoverLetter
-              }
+              onPress={generateCoverLetter}
             />
 
             <Button
               title="Save Application"
-              onPress={
-                saveApplication
-              }
+              onPress={saveApplication}
             />
           </Card>
         )}
 
-        {letter !== "" && (
+        {letter && (
           <Card title="4. Cover Letter">
-            <Text
-              style={styles.body}
-            >
+            <Text style={styles.body}>
               {letter}
             </Text>
           </Card>
@@ -792,57 +467,28 @@ export default function App() {
         <Card title="5. Application Tracker">
           <Button
             title="Refresh Applications"
-            onPress={
-              loadApplications
-            }
+            onPress={loadApplications}
           />
 
-          {applications.length ===
-            0 && (
-            <Text
-              style={styles.emptyText}
+          {applications.map((item) => (
+            <View
+              key={item.id}
+              style={styles.row}
             >
-              No saved applications yet.
-            </Text>
-          )}
+              <Text style={styles.appTitle}>
+                {item.job_title || "Untitled Job"}
+              </Text>
 
-          {applications.map(
-            (item) => (
-              <View
-                key={item.id}
-                style={styles.row}
-              >
-                <Text
-                  style={
-                    styles.appTitle
-                  }
-                >
-                  {item.job_title ||
-                    "Untitled Job"}
-                </Text>
+              <Text>
+                {item.company || "Company"} •{" "}
+                {item.status}
+              </Text>
 
-                <Text
-                  style={styles.body}
-                >
-                  {item.company ||
-                    "Company"}{" "}
-                  •{" "}
-                  {item.status ||
-                    "SAVED"}
-                </Text>
-
-                <Text
-                  style={styles.body}
-                >
-                  Match:{" "}
-                  {Number(
-                    item.match_score
-                  ) || 0}
-                  %
-                </Text>
-              </View>
-            )
-          )}
+              <Text>
+                Match: {item.match_score}%
+              </Text>
+            </View>
+          ))}
         </Card>
       </ScrollView>
     </SafeAreaView>
@@ -858,12 +504,9 @@ function Card({
 }) {
   return (
     <View style={styles.card}>
-      <Text
-        style={styles.cardTitle}
-      >
+      <Text style={styles.cardTitle}>
         {title}
       </Text>
-
       {children}
     </View>
   );
@@ -877,22 +520,13 @@ function Label({
   items: string[];
 }) {
   return (
-    <View
-      style={{
-        marginBottom: 14
-      }}
-    >
-      <Text
-        style={styles.label}
-      >
+    <View style={{ marginBottom: 14 }}>
+      <Text style={styles.label}>
         {title}
       </Text>
 
-      <Text
-        style={styles.body}
-      >
-        {Array.isArray(items) &&
-        items.length > 0
+      <Text style={styles.body}>
+        {items?.length
           ? items.join(" • ")
           : "None detected"}
       </Text>
@@ -912,9 +546,7 @@ function Button({
       style={styles.button}
       onPress={onPress}
     >
-      <Text
-        style={styles.buttonText}
-      >
+      <Text style={styles.buttonText}>
         {title}
       </Text>
     </Pressable>
@@ -1011,11 +643,6 @@ const styles = StyleSheet.create({
     fontWeight: "600"
   },
 
-  scoreBox: {
-    alignItems: "center",
-    marginBottom: 8
-  },
-
   score: {
     fontSize: 46,
     fontWeight: "900",
@@ -1041,22 +668,6 @@ const styles = StyleSheet.create({
   body: {
     lineHeight: 21,
     color: "#374151"
-  },
-
-  sectionText: {
-    marginBottom: 14
-  },
-
-  successText: {
-    color: "#16a34a",
-    fontWeight: "700",
-    marginBottom: 8
-  },
-
-  emptyText: {
-    color: "#6b7280",
-    textAlign: "center",
-    paddingVertical: 10
   },
 
   row: {
