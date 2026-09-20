@@ -115,21 +115,35 @@ Rules:
 - Never invent achievements.
 - Only use information available in the CV.
 - Return ONLY valid JSON.
+- Do not use Markdown.
 - Keep the response concise.
 - match_score must be a number from 0 to 100.
+- Every skill must be returned as a simple string.
+- All array fields must always be arrays, even when empty.
 
-Required JSON keys:
+Required JSON structure:
 
-match_score
-required_skills
-matched_skills
-missing_skills
-experience_match
-education_match
-ats_keywords
-strengths
-weaknesses
-recommendation
+{{
+    "match_score": 0,
+    "required_skills": [],
+    "matched_skills": [],
+    "missing_skills": [],
+    "experience_match": "",
+    "education_match": "",
+    "ats_keywords": [],
+    "strengths": [],
+    "weaknesses": [],
+    "recommendation": ""
+}}
+
+Important:
+- required_skills = skills required by the job.
+- matched_skills = required skills that are clearly present in the CV.
+- missing_skills = required skills that are not clearly present in the CV.
+- ats_keywords = important keywords from the job description that are relevant for ATS.
+- strengths = relevant strengths supported by the CV.
+- weaknesses = relevant gaps supported by the comparison.
+- recommendation should be a short factual recommendation based only on the comparison.
 
 CV:
 {cv[:8000]}
@@ -273,6 +287,170 @@ JOB DESCRIPTION:
 
         result = json.loads(content)
 
+        # --------------------------------------------------
+        # Normalize AI response
+        # --------------------------------------------------
+
+        required_skills = result.get(
+            "required_skills",
+            []
+        )
+
+        if not isinstance(required_skills, list):
+            required_skills = []
+
+        matched_skills = result.get(
+            "matched_skills",
+            []
+        )
+
+        missing_skills = result.get(
+            "missing_skills",
+            []
+        )
+
+        ats_keywords = result.get(
+            "ats_keywords",
+            []
+        )
+
+        # --------------------------------------------------
+        # Convert invalid values to lists
+        # --------------------------------------------------
+
+        if not isinstance(matched_skills, list):
+            matched_skills = []
+
+        if not isinstance(missing_skills, list):
+            missing_skills = []
+
+        if not isinstance(ats_keywords, list):
+            ats_keywords = []
+
+        # --------------------------------------------------
+        # Calculate matched skills if AI didn't provide them
+        # --------------------------------------------------
+
+        if not matched_skills:
+
+            matched_skills = [
+                skill
+                for skill in required_skills
+                if str(skill).lower() in cv.lower()
+            ]
+
+        # --------------------------------------------------
+        # Calculate missing skills if AI didn't provide them
+        # --------------------------------------------------
+
+        if not missing_skills:
+
+            missing_skills = [
+                skill
+                for skill in required_skills
+                if str(skill).lower() not in cv.lower()
+            ]
+
+        # --------------------------------------------------
+        # Use required skills as ATS keywords
+        # if AI didn't return keywords
+        # --------------------------------------------------
+
+        if not ats_keywords:
+
+            ats_keywords = required_skills
+
+        # --------------------------------------------------
+        # Make sure match score exists
+        # --------------------------------------------------
+
+        match_score = result.get(
+            "match_score",
+            0
+        )
+
+        try:
+            match_score = float(match_score)
+        except (TypeError, ValueError):
+            match_score = 0
+
+        # --------------------------------------------------
+        # Make sure recommendation exists
+        # --------------------------------------------------
+
+        recommendation = result.get(
+            "recommendation",
+            ""
+        )
+
+        if not recommendation:
+
+            recommendation = (
+                "Apply"
+                if match_score >= 60
+                else "Consider skill gap first"
+            )
+
+        # --------------------------------------------------
+        # Make sure strengths and weaknesses exist
+        # --------------------------------------------------
+
+        strengths = result.get(
+            "strengths",
+            []
+        )
+
+        weaknesses = result.get(
+            "weaknesses",
+            []
+        )
+
+        if not isinstance(strengths, list):
+            strengths = []
+
+        if not isinstance(weaknesses, list):
+            weaknesses = []
+
+        if not strengths:
+            strengths = matched_skills[:5]
+
+        if not weaknesses:
+            weaknesses = missing_skills[:5]
+
+        # --------------------------------------------------
+        # Final normalized response
+        # --------------------------------------------------
+
+        result["match_score"] = match_score
+        result["required_skills"] = required_skills
+        result["matched_skills"] = matched_skills
+        result["missing_skills"] = missing_skills
+        result["ats_keywords"] = ats_keywords
+        result["strengths"] = strengths
+        result["weaknesses"] = weaknesses
+        result["recommendation"] = recommendation
+
+        # Make sure these fields always exist
+        result["experience_match"] = result.get(
+            "experience_match",
+            "Review required"
+        )
+
+        result["education_match"] = result.get(
+            "education_match",
+            "Review required"
+        )
+
+        result["mode"] = "openrouter"
+
+        print(
+            "FINAL AI ANALYSIS:",
+            json.dumps(
+                result,
+                indent=2
+            )
+        )
+
         return result
 
     except json.JSONDecodeError as exc:
@@ -361,7 +539,7 @@ JOB DESCRIPTION:
     }
 
     # --------------------------------------------------
-    # Send request
+    # Send request to OpenRouter
     # --------------------------------------------------
 
     try:
