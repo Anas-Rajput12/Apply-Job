@@ -1,3 +1,4 @@
+```python
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,8 +17,11 @@ router = APIRouter()
 # ============================================================
 
 class AnalyzeBody(BaseModel):
-    # Standard backend fields
+    # Resume
     resume_id: int | None = None
+    resume_text: str | None = None
+
+    # Job description
     job_description: str | None = None
 
     # Optional job information
@@ -25,11 +29,9 @@ class AnalyzeBody(BaseModel):
     company: str = ""
     url: str = ""
 
-    # Support frontend camelCase fields
+    # Frontend compatibility
     resumeId: int | None = None
     jobDescription: str | None = None
-
-    # Support simple "job" field
     job: str | None = None
 
     def get_resume_id(self):
@@ -45,10 +47,19 @@ class AnalyzeBody(BaseModel):
 
 
 class CoverLetterBody(BaseModel):
+    # Resume
     resume_id: int | None = None
-    job_description: str | None = None
-    company: str = ""
+    resume_text: str | None = None
 
+    # Job description
+    job_description: str | None = None
+
+    # Optional
+    company: str = ""
+    title: str = ""
+    url: str = ""
+
+    # Frontend compatibility
     resumeId: int | None = None
     jobDescription: str | None = None
     job: str | None = None
@@ -66,6 +77,80 @@ class CoverLetterBody(BaseModel):
 
 
 # ============================================================
+# HELPER: GET RESUME TEXT
+# ============================================================
+
+def get_resume_text(
+    resume_id: int | None,
+    resume_text: str | None,
+    user_id: int
+) -> str:
+
+    # --------------------------------------------------------
+    # Option 1: Frontend directly sends resume_text
+    # --------------------------------------------------------
+
+    if resume_text and resume_text.strip():
+        return resume_text.strip()
+
+    # --------------------------------------------------------
+    # Option 2: Frontend sends resume_id
+    # --------------------------------------------------------
+
+    if resume_id:
+
+        conn = get_db()
+
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        filename,
+                        text
+                    FROM resumes
+                    WHERE id = %s
+                    AND user_id = %s
+                    """,
+                    (
+                        resume_id,
+                        user_id
+                    )
+                )
+
+                resume = cur.fetchone()
+
+        finally:
+            conn.close()
+
+        if not resume:
+            raise HTTPException(
+                status_code=404,
+                detail="Resume not found"
+            )
+
+        text = resume["text"]
+
+        if not text:
+            raise HTTPException(
+                status_code=400,
+                detail="Resume text is empty"
+            )
+
+        return text.strip()
+
+    # --------------------------------------------------------
+    # No resume provided
+    # --------------------------------------------------------
+
+    raise HTTPException(
+        status_code=400,
+        detail="resume_text or resume_id is required"
+    )
+
+
+# ============================================================
 # ANALYZE JOB
 # ============================================================
 
@@ -76,25 +161,10 @@ async def analyze(
 ):
 
     # --------------------------------------------------------
-    # Get normalized values
+    # Get job description
     # --------------------------------------------------------
 
-    resume_id = body.get_resume_id()
     job_description = body.get_job_description()
-
-    # --------------------------------------------------------
-    # Validate resume ID
-    # --------------------------------------------------------
-
-    if not resume_id:
-        raise HTTPException(
-            status_code=400,
-            detail="resume_id is required"
-        )
-
-    # --------------------------------------------------------
-    # Validate job description
-    # --------------------------------------------------------
 
     if not job_description.strip():
         raise HTTPException(
@@ -103,59 +173,19 @@ async def analyze(
         )
 
     # --------------------------------------------------------
-    # Get resume from PostgreSQL
+    # Get resume
     # --------------------------------------------------------
 
-    conn = get_db()
+    resume_id = body.get_resume_id()
 
-    try:
-        with conn.cursor() as cur:
-
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    filename,
-                    text
-                FROM resumes
-                WHERE id = %s
-                AND user_id = %s
-                """,
-                (
-                    resume_id,
-                    user_id
-                )
-            )
-
-            resume = cur.fetchone()
-
-    finally:
-        conn.close()
+    cv_text = get_resume_text(
+        resume_id=resume_id,
+        resume_text=body.resume_text,
+        user_id=user_id
+    )
 
     # --------------------------------------------------------
-    # Resume not found
-    # --------------------------------------------------------
-
-    if not resume:
-        raise HTTPException(
-            status_code=404,
-            detail="Resume not found"
-        )
-
-    # --------------------------------------------------------
-    # Resume text
-    # --------------------------------------------------------
-
-    cv_text = resume["text"]
-
-    if not cv_text:
-        raise HTTPException(
-            status_code=400,
-            detail="Resume text is empty"
-        )
-
-    # --------------------------------------------------------
-    # Analyze using AI
+    # AI Analysis
     # --------------------------------------------------------
 
     result = await analyze_job(
@@ -164,7 +194,7 @@ async def analyze(
     )
 
     # --------------------------------------------------------
-    # Save result to PostgreSQL
+    # Save job + analysis
     # --------------------------------------------------------
 
     conn = get_db()
@@ -217,7 +247,7 @@ async def analyze(
         conn.close()
 
     # --------------------------------------------------------
-    # Return result
+    # Response
     # --------------------------------------------------------
 
     return {
@@ -237,21 +267,10 @@ async def cover_letter(
 ):
 
     # --------------------------------------------------------
-    # Normalize values
+    # Get job description
     # --------------------------------------------------------
 
-    resume_id = body.get_resume_id()
     job_description = body.get_job_description()
-
-    # --------------------------------------------------------
-    # Validate
-    # --------------------------------------------------------
-
-    if not resume_id:
-        raise HTTPException(
-            status_code=400,
-            detail="resume_id is required"
-        )
 
     if not job_description.strip():
         raise HTTPException(
@@ -263,49 +282,13 @@ async def cover_letter(
     # Get resume
     # --------------------------------------------------------
 
-    conn = get_db()
+    resume_id = body.get_resume_id()
 
-    try:
-        with conn.cursor() as cur:
-
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    filename,
-                    text
-                FROM resumes
-                WHERE id = %s
-                AND user_id = %s
-                """,
-                (
-                    resume_id,
-                    user_id
-                )
-            )
-
-            resume = cur.fetchone()
-
-    finally:
-        conn.close()
-
-    # --------------------------------------------------------
-    # Resume not found
-    # --------------------------------------------------------
-
-    if not resume:
-        raise HTTPException(
-            status_code=404,
-            detail="Resume not found"
-        )
-
-    cv_text = resume["text"]
-
-    if not cv_text:
-        raise HTTPException(
-            status_code=400,
-            detail="Resume text is empty"
-        )
+    cv_text = get_resume_text(
+        resume_id=resume_id,
+        resume_text=body.resume_text,
+        user_id=user_id
+    )
 
     # --------------------------------------------------------
     # Generate cover letter
@@ -431,19 +414,11 @@ def get_job(
     finally:
         conn.close()
 
-    # --------------------------------------------------------
-    # Job not found
-    # --------------------------------------------------------
-
     if not job:
         raise HTTPException(
             status_code=404,
             detail="Job not found"
         )
-
-    # --------------------------------------------------------
-    # Parse analysis
-    # --------------------------------------------------------
 
     analysis = None
 
@@ -457,10 +432,6 @@ def get_job(
         except Exception:
             analysis = None
 
-    # --------------------------------------------------------
-    # Return job
-    # --------------------------------------------------------
-
     return {
         "id": job["id"],
         "title": job["title"],
@@ -470,3 +441,4 @@ def get_job(
         "analysis": analysis,
         "created_at": job["created_at"]
     }
+```
