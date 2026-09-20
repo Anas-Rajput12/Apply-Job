@@ -440,4 +440,3 @@ def get_job(
         "analysis": analysis,
         "created_at": job["created_at"]
     }
-```
