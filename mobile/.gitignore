@@ -1,0 +1,9 @@
+node_modules/
+venv/
+.venv/
+.env
+.expo/
+dist/
+__pycache__/
+*.pyc
+*.db

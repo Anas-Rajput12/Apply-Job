@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "ApplyAI",
+    "slug": "apply-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-document-picker"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "75045f10-c878-4c6b-b0d9-9cb944a3147e"
+      }
+    },
+    "android": {
+      "package": "com.anasrajput.applyai"
+    }
+  }
+}
