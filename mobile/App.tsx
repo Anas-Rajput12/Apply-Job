@@ -8,7 +8,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
 } from "react-native";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -34,11 +34,21 @@ export default function App() {
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // --------------------------------------------------
+  // Load saved token
+  // --------------------------------------------------
+
   useEffect(() => {
     AsyncStorage.getItem("token").then((value) => {
-      if (value) setToken(value);
+      if (value) {
+        setToken(value);
+      }
     });
   }, []);
+
+  // --------------------------------------------------
+  // Login / Register
+  // --------------------------------------------------
 
   async function authenticate() {
     try {
@@ -50,8 +60,8 @@ export default function App() {
           method: "POST",
           body: JSON.stringify({
             email,
-            password
-          })
+            password,
+          }),
         }
       );
 
@@ -61,34 +71,56 @@ export default function App() {
       );
 
       setToken(result.access_token);
+
     } catch (error: any) {
-      Alert.alert("Error", error.message);
+      Alert.alert(
+        "Error",
+        error.message || "Authentication failed"
+      );
+
     } finally {
       setLoading(false);
     }
   }
 
-  async function uploadCV() {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: "application/pdf",
-      copyToCacheDirectory: true,
-    });
+  // --------------------------------------------------
+  // Upload CV
+  // --------------------------------------------------
 
-    if (result.canceled) return;
+  async function uploadCV() {
+    const result =
+      await DocumentPicker.getDocumentAsync({
+        type: "application/pdf",
+        copyToCacheDirectory: true,
+      });
+
+    if (result.canceled) {
+      return;
+    }
 
     const file = result.assets[0];
 
-    console.log("SELECTED FILE:", file);
+    console.log(
+      "SELECTED FILE:",
+      file
+    );
 
     try {
       setLoading(true);
 
       const form = new FormData();
 
+      // --------------------------------------------------
       // Expo Web
+      // --------------------------------------------------
+
       if (file.base64) {
-        const response = await fetch(file.base64);
-        const blob = await response.blob();
+        const response = await fetch(
+          file.base64
+        );
+
+        const blob =
+          await response.blob();
 
         form.append(
           "file",
@@ -96,17 +128,31 @@ export default function App() {
             [blob],
             file.name || "resume.pdf",
             {
-              type: file.mimeType || "application/pdf",
+              type:
+                file.mimeType ||
+                "application/pdf",
             }
           )
         );
+
       } else {
+
+        // --------------------------------------------------
         // Native Android / iOS
-        form.append("file", {
-          uri: file.uri,
-          name: file.name || "resume.pdf",
-          type: file.mimeType || "application/pdf",
-        } as any);
+        // --------------------------------------------------
+
+        form.append(
+          "file",
+          {
+            uri: file.uri,
+            name:
+              file.name ||
+              "resume.pdf",
+            type:
+              file.mimeType ||
+              "application/pdf",
+          } as any
+        );
       }
 
       console.log(
@@ -114,106 +160,112 @@ export default function App() {
         `${API_BASE_URL}/api/resume/upload`
       );
 
-      const response = await fetch(
-        `${API_BASE_URL}/api/resume/upload`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: form,
-        }
+      const response =
+        await fetch(
+          `${API_BASE_URL}/api/resume/upload`,
+          {
+            method: "POST",
+            headers: {
+              Authorization:
+                `Bearer ${token}`,
+            },
+            body: form,
+          }
+        );
+
+      const responseText =
+        await response.text();
+
+      console.log(
+        "UPLOAD STATUS:",
+        response.status
       );
 
-      const responseText = await response.text();
-
-      console.log("UPLOAD STATUS:", response.status);
-      console.log("UPLOAD RESPONSE:", responseText);
+      console.log(
+        "UPLOAD RESPONSE:",
+        responseText
+      );
 
       let data: any;
 
       try {
-        data = JSON.parse(responseText);
+        data =
+          JSON.parse(responseText);
       } catch {
-        data = { detail: responseText };
+        data = {
+          detail: responseText,
+        };
       }
 
       if (!response.ok) {
         const detail =
           typeof data.detail === "string"
             ? data.detail
-            : JSON.stringify(data.detail, null, 2);
+            : JSON.stringify(
+                data.detail,
+                null,
+                2
+              );
 
         throw new Error(
           `HTTP ${response.status}: ${detail}`
         );
       }
 
-      setResume(data.text);
+      setResume(data.text || "");
 
       Alert.alert(
         "CV Uploaded",
         "Your PDF text was extracted successfully."
       );
+
     } catch (error: any) {
-      console.log("UPLOAD ERROR:", error);
+
+      console.log(
+        "UPLOAD ERROR:",
+        error
+      );
 
       Alert.alert(
         "Upload Error",
-        error.message || "CV upload failed"
+        error.message ||
+          "CV upload failed"
       );
+
     } finally {
       setLoading(false);
     }
   }
 
- async function analyzeJob() {
-  if (!resume.trim()) {
-    Alert.alert("CV required", "Upload or paste your CV first.");
-    return;
-  }
+  // --------------------------------------------------
+  // Analyze Job
+  // --------------------------------------------------
 
-  if (!job.trim()) {
-    Alert.alert(
-      "Job description required",
-      "Paste the job description first."
-    );
-    return;
-  }
+  async function analyzeJob() {
+    if (!resume.trim()) {
+      Alert.alert(
+        "CV required",
+        "Upload or paste your CV first."
+      );
+      return;
+    }
 
-  try {
-    setLoading(true);
+    if (!job.trim()) {
+      Alert.alert(
+        "Job description required",
+        "Paste the job description first."
+      );
+      return;
+    }
 
-    const result = await apiAuth(
-      "/api/jobs/analyze",
-      token,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          resume_text: resume,
-          job_description: job,
-          title,
-          company
-        })
-      }
-    );
-
-    console.log("ANALYSIS RESULT:", result);
-
-    setAnalysis(result.analysis);
-  } catch (error: any) {
-    Alert.alert("Analysis Error", error.message);
-  } finally {
-    setLoading(false);
-  }
-}
-
-  async function generateCoverLetter() {
     try {
       setLoading(true);
 
+      // Clear previous analysis
+      setAnalysis(null);
+
       const result = await apiAuth(
-        "/api/jobs/cover-letter",
+        "/api/jobs/analyze",
         token,
         {
           method: "POST",
@@ -221,18 +273,388 @@ export default function App() {
             resume_text: resume,
             job_description: job,
             title,
-            company
-          })
+            company,
+          }),
         }
       );
 
-      setLetter(result.cover_letter);
+      // --------------------------------------------------
+      // DEBUG: Show complete backend response
+      // --------------------------------------------------
+
+      console.log(
+        "===================================="
+      );
+
+      console.log(
+        "FULL ANALYSIS API RESPONSE:"
+      );
+
+      console.log(
+        JSON.stringify(
+          result,
+          null,
+          2
+        )
+      );
+
+      console.log(
+        "===================================="
+      );
+
+      // --------------------------------------------------
+      // Find analysis object
+      //
+      // Supports:
+      // result.analysis
+      // result.data.analysis
+      // result.result.analysis
+      // result.data
+      // direct result
+      // --------------------------------------------------
+
+      const ai =
+        result?.analysis ??
+        result?.data?.analysis ??
+        result?.result?.analysis ??
+        result?.data ??
+        result;
+
+      console.log(
+        "EXTRACTED ANALYSIS:"
+      );
+
+      console.log(
+        JSON.stringify(
+          ai,
+          null,
+          2
+        )
+      );
+
+      // --------------------------------------------------
+      // Normalize all frontend fields
+      // --------------------------------------------------
+
+      let matchedSkills =
+        Array.isArray(
+          ai?.matched_skills
+        )
+          ? ai.matched_skills
+          : [];
+
+      let missingSkills =
+        Array.isArray(
+          ai?.missing_skills
+        )
+          ? ai.missing_skills
+          : [];
+
+      let atsKeywords =
+        Array.isArray(
+          ai?.ats_keywords
+        )
+          ? ai.ats_keywords
+          : [];
+
+      let requiredSkills =
+        Array.isArray(
+          ai?.required_skills
+        )
+          ? ai.required_skills
+          : [];
+
+      // --------------------------------------------------
+      // If backend only returned required_skills,
+      // calculate matched/missing from CV
+      // --------------------------------------------------
+
+      if (
+        requiredSkills.length > 0
+      ) {
+        if (
+          matchedSkills.length === 0
+        ) {
+          matchedSkills =
+            requiredSkills.filter(
+              (skill: any) => {
+                const skillText =
+                  String(skill)
+                    .toLowerCase()
+                    .trim();
+
+                return (
+                  skillText.length > 0 &&
+                  resume
+                    .toLowerCase()
+                    .includes(skillText)
+                );
+              }
+            );
+        }
+
+        if (
+          missingSkills.length === 0
+        ) {
+          missingSkills =
+            requiredSkills.filter(
+              (skill: any) => {
+                const skillText =
+                  String(skill)
+                    .toLowerCase()
+                    .trim();
+
+                return (
+                  skillText.length > 0 &&
+                  !resume
+                    .toLowerCase()
+                    .includes(skillText)
+                );
+              }
+            );
+        }
+      }
+
+      // --------------------------------------------------
+      // ATS keywords fallback
+      // --------------------------------------------------
+
+      if (
+        atsKeywords.length === 0
+      ) {
+        atsKeywords =
+          requiredSkills;
+      }
+
+      // --------------------------------------------------
+      // Match score
+      // --------------------------------------------------
+
+      let matchScore =
+        ai?.match_score ?? 0;
+
+      if (
+        typeof matchScore ===
+        "string"
+      ) {
+        matchScore =
+          parseFloat(
+            matchScore
+          );
+      }
+
+      if (
+        Number.isNaN(matchScore)
+      ) {
+        matchScore = 0;
+      }
+
+      // --------------------------------------------------
+      // Recommendation
+      // --------------------------------------------------
+
+      const recommendation =
+        ai?.recommendation ||
+        (
+          matchScore >= 60
+            ? "Apply"
+            : "Consider skill gap first"
+        );
+
+      // --------------------------------------------------
+      // Strengths
+      // --------------------------------------------------
+
+      let strengths =
+        Array.isArray(
+          ai?.strengths
+        )
+          ? ai.strengths
+          : [];
+
+      if (
+        strengths.length === 0
+      ) {
+        strengths =
+          matchedSkills.slice(
+            0,
+            5
+          );
+      }
+
+      // --------------------------------------------------
+      // Weaknesses
+      // --------------------------------------------------
+
+      let weaknesses =
+        Array.isArray(
+          ai?.weaknesses
+        )
+          ? ai.weaknesses
+          : [];
+
+      if (
+        weaknesses.length === 0
+      ) {
+        weaknesses =
+          missingSkills.slice(
+            0,
+            5
+          );
+      }
+
+      // --------------------------------------------------
+      // Final frontend analysis object
+      // --------------------------------------------------
+
+      const normalizedAnalysis = {
+        match_score:
+          matchScore,
+
+        recommendation:
+          recommendation,
+
+        required_skills:
+          requiredSkills,
+
+        matched_skills:
+          matchedSkills,
+
+        missing_skills:
+          missingSkills,
+
+        ats_keywords:
+          atsKeywords,
+
+        experience_match:
+          ai?.experience_match ||
+          "Review required",
+
+        education_match:
+          ai?.education_match ||
+          "Review required",
+
+        strengths:
+          strengths,
+
+        weaknesses:
+          weaknesses,
+      };
+
+      console.log(
+        "===================================="
+      );
+
+      console.log(
+        "FINAL FRONTEND ANALYSIS:"
+      );
+
+      console.log(
+        JSON.stringify(
+          normalizedAnalysis,
+          null,
+          2
+        )
+      );
+
+      console.log(
+        "===================================="
+      );
+
+      // --------------------------------------------------
+      // Update UI
+      // --------------------------------------------------
+
+      setAnalysis(
+        normalizedAnalysis
+      );
+
     } catch (error: any) {
-      Alert.alert("AI Error", error.message);
+
+      console.error(
+        "ANALYSIS ERROR:",
+        error
+      );
+
+      Alert.alert(
+        "Analysis Error",
+        error.message ||
+          "Could not analyze job."
+      );
+
     } finally {
       setLoading(false);
     }
   }
+
+  // --------------------------------------------------
+  // Generate Cover Letter
+  // --------------------------------------------------
+
+  async function generateCoverLetter() {
+    if (!resume.trim()) {
+      Alert.alert(
+        "CV required",
+        "Upload or paste your CV first."
+      );
+      return;
+    }
+
+    if (!job.trim()) {
+      Alert.alert(
+        "Job description required",
+        "Paste the job description first."
+      );
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const result =
+        await apiAuth(
+          "/api/jobs/cover-letter",
+          token,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              resume_text:
+                resume,
+              job_description:
+                job,
+              title,
+              company,
+            }),
+          }
+        );
+
+      console.log(
+        "COVER LETTER RESULT:",
+        result
+      );
+
+      setLetter(
+        result.cover_letter ||
+          result.data?.cover_letter ||
+          ""
+      );
+
+    } catch (error: any) {
+
+      Alert.alert(
+        "AI Error",
+        error.message ||
+          "Could not generate cover letter."
+      );
+
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // --------------------------------------------------
+  // Save Application
+  // --------------------------------------------------
 
   async function saveApplication() {
     try {
@@ -242,12 +664,22 @@ export default function App() {
         {
           method: "POST",
           body: JSON.stringify({
-            job_title: title,
-            company,
-            match_score: analysis?.match_score || 0,
-            status: "SAVED",
-            cover_letter: letter
-          })
+            job_title:
+              title,
+
+            company:
+              company,
+
+            match_score:
+              analysis?.match_score ||
+              0,
+
+            status:
+              "SAVED",
+
+            cover_letter:
+              letter,
+          }),
         }
       );
 
@@ -257,36 +689,89 @@ export default function App() {
       );
 
       loadApplications();
+
     } catch (error: any) {
-      Alert.alert("Error", error.message);
+
+      Alert.alert(
+        "Error",
+        error.message ||
+          "Could not save application."
+      );
     }
   }
+
+  // --------------------------------------------------
+  // Load Applications
+  // --------------------------------------------------
 
   async function loadApplications() {
     try {
-      const data = await apiAuth(
-        "/api/applications",
-        token
+      const data =
+        await apiAuth(
+          "/api/applications",
+          token
+        );
+
+      console.log(
+        "APPLICATIONS:",
+        data
       );
 
-      setApplications(data);
-    } catch {
-      // User can retry with the refresh button.
+      setApplications(
+        Array.isArray(data)
+          ? data
+          : data?.applications || []
+      );
+
+    } catch (error) {
+
+      console.log(
+        "LOAD APPLICATIONS ERROR:",
+        error
+      );
+
+      // User can retry
     }
   }
 
+  // --------------------------------------------------
+  // Logout
+  // --------------------------------------------------
+
   async function logout() {
-    await AsyncStorage.removeItem("token");
+    await AsyncStorage.removeItem(
+      "token"
+    );
+
     setToken("");
+
+    setAnalysis(null);
+    setLetter("");
+    setResume("");
+    setJob("");
   }
+
+  // --------------------------------------------------
+  // Login / Register Screen
+  // --------------------------------------------------
 
   if (!token) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.authCard}>
-          <Text style={styles.logo}>ApplyAI</Text>
+      <SafeAreaView
+        style={styles.container}
+      >
+        <View
+          style={styles.authCard}
+        >
+          <Text
+            style={styles.logo}
+          >
+            ApplyAI
+          </Text>
 
-          <Text style={styles.subtitle}>
+          <Text
+            style={styles.subtitle}
+          >
             Your AI Job Application Agent
           </Text>
 
@@ -315,7 +800,9 @@ export default function App() {
                 ? "Login"
                 : "Create Account"
             }
-            onPress={authenticate}
+            onPress={
+              authenticate
+            }
           />
 
           <Pressable
@@ -327,7 +814,9 @@ export default function App() {
               )
             }
           >
-            <Text style={styles.link}>
+            <Text
+              style={styles.link}
+            >
               {mode === "login"
                 ? "Create a new account"
                 : "Already have an account? Login"}
@@ -338,27 +827,54 @@ export default function App() {
     );
   }
 
+  // --------------------------------------------------
+  // Main App
+  // --------------------------------------------------
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={styles.container}
+    >
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={
+          styles.content
+        }
       >
-        <View style={styles.header}>
+
+        {/* Header */}
+
+        <View
+          style={styles.header}
+        >
           <View>
-            <Text style={styles.logo}>ApplyAI</Text>
-            <Text style={styles.subtitle}>
+            <Text
+              style={styles.logo}
+            >
+              ApplyAI
+            </Text>
+
+            <Text
+              style={styles.subtitle}
+            >
               AI Job Application Agent
             </Text>
           </View>
 
-          <Pressable onPress={logout}>
-            <Text style={styles.logout}>
+          <Pressable
+            onPress={logout}
+          >
+            <Text
+              style={styles.logout}
+            >
               Logout
             </Text>
           </Pressable>
         </View>
 
+        {/* CV */}
+
         <Card title="1. My CV">
+
           <Button
             title="Upload PDF CV"
             onPress={uploadCV}
@@ -367,176 +883,324 @@ export default function App() {
           <TextInput
             style={[
               styles.input,
-              styles.textarea
+              styles.textarea,
             ]}
             multiline
             placeholder="Or paste your CV text here..."
             value={resume}
-            onChangeText={setResume}
+            onChangeText={
+              setResume
+            }
           />
+
         </Card>
 
+        {/* Job Details */}
+
         <Card title="2. Job Details">
+
           <TextInput
             style={styles.input}
             placeholder="Job title"
             value={title}
-            onChangeText={setTitle}
+            onChangeText={
+              setTitle
+            }
           />
 
           <TextInput
             style={styles.input}
             placeholder="Company"
             value={company}
-            onChangeText={setCompany}
+            onChangeText={
+              setCompany
+            }
           />
 
           <TextInput
             style={[
               styles.input,
-              styles.textarea
+              styles.textarea,
             ]}
             multiline
             placeholder="Paste complete job description..."
             value={job}
-            onChangeText={setJob}
+            onChangeText={
+              setJob
+            }
           />
 
           <Button
             title="Analyze Job Match"
-            onPress={analyzeJob}
+            onPress={
+              analyzeJob
+            }
           />
+
         </Card>
+
+        {/* Loading */}
 
         {loading && (
           <ActivityIndicator
             size="large"
-            style={{ marginBottom: 16 }}
+            style={{
+              marginBottom: 16,
+            }}
           />
         )}
 
+        {/* AI Analysis */}
+
         {analysis && (
           <Card title="3. AI Analysis">
-            <Text style={styles.score}>
+
+            <Text
+              style={styles.score}
+            >
               {analysis.match_score}%
             </Text>
 
-            <Text style={styles.center}>
+            <Text
+              style={styles.center}
+            >
               Match Score
             </Text>
 
-            <Text style={styles.recommend}>
-              {analysis.recommendation}
-            </Text>
+            {analysis.recommendation ? (
+              <Text
+                style={
+                  styles.recommend
+                }
+              >
+                {analysis.recommendation}
+              </Text>
+            ) : null}
 
             <Label
               title="Matched Skills"
-              items={analysis.matched_skills}
+              items={
+                analysis.matched_skills ||
+                []
+              }
             />
 
             <Label
               title="Missing Skills"
-              items={analysis.missing_skills}
+              items={
+                analysis.missing_skills ||
+                []
+              }
             />
 
             <Label
               title="ATS Keywords"
-              items={analysis.ats_keywords}
+              items={
+                analysis.ats_keywords ||
+                []
+              }
             />
 
             <Button
               title="Generate Cover Letter"
-              onPress={generateCoverLetter}
+              onPress={
+                generateCoverLetter
+              }
             />
 
             <Button
               title="Save Application"
-              onPress={saveApplication}
+              onPress={
+                saveApplication
+              }
             />
+
           </Card>
         )}
+
+        {/* Cover Letter */}
 
         {letter && (
           <Card title="4. Cover Letter">
-            <Text style={styles.body}>
+
+            <Text
+              style={styles.body}
+            >
               {letter}
             </Text>
+
           </Card>
         )}
 
+        {/* Application Tracker */}
+
         <Card title="5. Application Tracker">
+
           <Button
             title="Refresh Applications"
-            onPress={loadApplications}
+            onPress={
+              loadApplications
+            }
           />
 
-          {applications.map((item) => (
-            <View
-              key={item.id}
-              style={styles.row}
+          {applications.length === 0 ? (
+            <Text
+              style={styles.body}
             >
-              <Text style={styles.appTitle}>
-                {item.job_title || "Untitled Job"}
-              </Text>
+              No saved applications yet.
+            </Text>
+          ) : (
+            applications.map(
+              (item) => (
+                <View
+                  key={item.id}
+                  style={styles.row}
+                >
 
-              <Text>
-                {item.company || "Company"} •{" "}
-                {item.status}
-              </Text>
+                  <Text
+                    style={
+                      styles.appTitle
+                    }
+                  >
+                    {
+                      item.job_title ||
+                      "Untitled Job"
+                    }
+                  </Text>
 
-              <Text>
-                Match: {item.match_score}%
-              </Text>
-            </View>
-          ))}
+                  <Text>
+                    {
+                      item.company ||
+                      "Company"
+                    }{" "}
+                    •{" "}
+                    {
+                      item.status
+                    }
+                  </Text>
+
+                  <Text>
+                    Match:{" "}
+                    {
+                      item.match_score
+                    }%
+                  </Text>
+
+                </View>
+              )
+            )
+          )}
+
         </Card>
+
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// --------------------------------------------------
+// Card Component
+// --------------------------------------------------
+
 function Card({
   title,
-  children
+  children,
 }: {
   title: string;
   children: React.ReactNode;
 }) {
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>
+    <View
+      style={styles.card}
+    >
+      <Text
+        style={
+          styles.cardTitle
+        }
+      >
         {title}
       </Text>
+
       {children}
     </View>
   );
 }
 
+// --------------------------------------------------
+// Label Component
+// --------------------------------------------------
+
 function Label({
   title,
-  items
+  items,
 }: {
   title: string;
-  items: string[];
+  items: any[];
 }) {
   return (
-    <View style={{ marginBottom: 14 }}>
-      <Text style={styles.label}>
+    <View
+      style={{
+        marginBottom: 14,
+      }}
+    >
+
+      <Text
+        style={styles.label}
+      >
         {title}
       </Text>
 
-      <Text style={styles.body}>
-        {items?.length
-          ? items.join(" • ")
-          : "None detected"}
-      </Text>
+      {Array.isArray(items) &&
+      items.length > 0 ? (
+
+        <View
+          style={{
+            marginTop: 4,
+          }}
+        >
+
+          {items.map(
+            (
+              item,
+              index
+            ) => (
+              <Text
+                key={`${String(
+                  item
+                )}-${index}`}
+                style={
+                  styles.body
+                }
+              >
+                •{" "}
+                {String(item)}
+              </Text>
+            )
+          )}
+
+        </View>
+
+      ) : (
+
+        <Text
+          style={styles.body}
+        >
+          None detected
+        </Text>
+
+      )}
+
     </View>
   );
 }
 
+// --------------------------------------------------
+// Button Component
+// --------------------------------------------------
+
 function Button({
   title,
-  onPress
+  onPress,
 }: {
   title: string;
   onPress: () => void;
@@ -546,139 +1210,183 @@ function Button({
       style={styles.button}
       onPress={onPress}
     >
-      <Text style={styles.buttonText}>
+      <Text
+        style={
+          styles.buttonText
+        }
+      >
         {title}
       </Text>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f5f7fb"
-  },
+// --------------------------------------------------
+// Styles
+// --------------------------------------------------
 
-  content: {
-    padding: 18,
-    paddingBottom: 60
-  },
+const styles =
+  StyleSheet.create({
 
-  authCard: {
-    margin: 20,
-    marginTop: 100,
-    padding: 24,
-    backgroundColor: "#fff",
-    borderRadius: 18
-  },
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#f5f7fb",
+    },
 
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 18
-  },
+    content: {
+      padding: 18,
+      paddingBottom: 60,
+    },
 
-  logo: {
-    fontSize: 30,
-    fontWeight: "800",
-    color: "#111827"
-  },
+    authCard: {
+      margin: 20,
+      marginTop: 100,
+      padding: 24,
+      backgroundColor:
+        "#fff",
+      borderRadius: 18,
+    },
 
-  subtitle: {
-    color: "#6b7280",
-    marginTop: 2
-  },
+    header: {
+      flexDirection:
+        "row",
+      justifyContent:
+        "space-between",
+      alignItems:
+        "center",
+      marginBottom: 18,
+    },
 
-  logout: {
-    color: "#dc2626",
-    fontWeight: "700"
-  },
+    logo: {
+      fontSize: 30,
+      fontWeight:
+        "800",
+      color:
+        "#111827",
+    },
 
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 16
-  },
+    subtitle: {
+      color:
+        "#6b7280",
+      marginTop: 2,
+    },
 
-  cardTitle: {
-    fontSize: 19,
-    fontWeight: "800",
-    marginBottom: 12,
-    color: "#111827"
-  },
+    logout: {
+      color:
+        "#dc2626",
+      fontWeight:
+        "700",
+    },
 
-  input: {
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    backgroundColor: "#fff"
-  },
+    card: {
+      backgroundColor:
+        "#fff",
+      borderRadius: 18,
+      padding: 16,
+      marginBottom: 16,
+    },
 
-  textarea: {
-    minHeight: 120,
-    textAlignVertical: "top"
-  },
+    cardTitle: {
+      fontSize: 19,
+      fontWeight:
+        "800",
+      marginBottom: 12,
+      color:
+        "#111827",
+    },
 
-  button: {
-    backgroundColor: "#111827",
-    padding: 13,
-    borderRadius: 12,
-    alignItems: "center",
-    marginBottom: 10
-  },
+    input: {
+      borderWidth: 1,
+      borderColor:
+        "#d1d5db",
+      borderRadius: 12,
+      padding: 12,
+      marginBottom: 10,
+      backgroundColor:
+        "#fff",
+    },
 
-  buttonText: {
-    color: "#fff",
-    fontWeight: "700"
-  },
+    textarea: {
+      minHeight: 120,
+      textAlignVertical:
+        "top",
+    },
 
-  link: {
-    textAlign: "center",
-    marginTop: 8,
-    color: "#2563eb",
-    fontWeight: "600"
-  },
+    button: {
+      backgroundColor:
+        "#111827",
+      padding: 13,
+      borderRadius: 12,
+      alignItems:
+        "center",
+      marginBottom: 10,
+    },
 
-  score: {
-    fontSize: 46,
-    fontWeight: "900",
-    textAlign: "center"
-  },
+    buttonText: {
+      color:
+        "#fff",
+      fontWeight:
+        "700",
+    },
 
-  center: {
-    textAlign: "center",
-    color: "#6b7280"
-  },
+    link: {
+      textAlign:
+        "center",
+      marginTop: 8,
+      color:
+        "#2563eb",
+      fontWeight:
+        "600",
+    },
 
-  recommend: {
-    textAlign: "center",
-    fontWeight: "800",
-    marginVertical: 14
-  },
+    score: {
+      fontSize: 46,
+      fontWeight:
+        "900",
+      textAlign:
+        "center",
+    },
 
-  label: {
-    fontWeight: "800",
-    marginBottom: 4
-  },
+    center: {
+      textAlign:
+        "center",
+      color:
+        "#6b7280",
+    },
 
-  body: {
-    lineHeight: 21,
-    color: "#374151"
-  },
+    recommend: {
+      textAlign:
+        "center",
+      fontWeight:
+        "800",
+      marginVertical: 14,
+    },
 
-  row: {
-    borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
-    paddingVertical: 12
-  },
+    label: {
+      fontWeight:
+        "800",
+      marginBottom: 4,
+    },
 
-  appTitle: {
-    fontWeight: "800",
-    fontSize: 16,
-    marginBottom: 3
-  }
-});
+    body: {
+      lineHeight: 21,
+      color:
+        "#374151",
+    },
+
+    row: {
+      borderTopWidth: 1,
+      borderTopColor:
+        "#e5e7eb",
+      paddingVertical: 12,
+    },
+
+    appTitle: {
+      fontWeight:
+        "800",
+      fontSize: 16,
+      marginBottom: 3,
+    },
+
+  });
