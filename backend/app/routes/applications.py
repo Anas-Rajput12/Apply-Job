@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.db import get_db
 from app.security import get_user_id
 
 router = APIRouter()
+
 
 class ApplicationBody(BaseModel):
     job_id: int | None = None
@@ -16,6 +17,7 @@ class ApplicationBody(BaseModel):
     cover_letter: str = ""
     notes: str = ""
 
+
 @router.post("")
 def create_application(
     body: ApplicationBody,
@@ -23,68 +25,142 @@ def create_application(
 ):
     conn = get_db()
 
-    cur = conn.execute(
-        """INSERT INTO applications
-        (user_id, job_id, job_title, company, job_url,
-         match_score, status, cover_letter, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            user_id,
-            body.job_id,
-            body.job_title,
-            body.company,
-            body.job_url,
-            body.match_score,
-            body.status.upper(),
-            body.cover_letter,
-            body.notes
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO applications (
+                    user_id,
+                    job_id,
+                    job_title,
+                    company,
+                    job_url,
+                    match_score,
+                    status,
+                    cover_letter,
+                    notes
+                )
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+                RETURNING id
+                """,
+                (
+                    user_id,
+                    body.job_id,
+                    body.job_title,
+                    body.company,
+                    body.job_url,
+                    body.match_score,
+                    body.status,
+                    body.cover_letter,
+                    body.notes
+                )
+            )
+
+            application_id = cur.fetchone()["id"]
+
+        conn.commit()
+
+        return {
+            "id": application_id,
+            "message": "Application saved successfully"
+        }
+
+    except Exception as exc:
+        conn.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save application: {exc}"
         )
-    )
 
-    conn.commit()
-    conn.close()
+    finally:
+        conn.close()
 
-    return {
-        "id": cur.lastrowid,
-        "message": "Application saved"
-    }
 
 @router.get("")
-def list_applications(
+def get_applications(
     user_id: int = Depends(get_user_id)
 ):
     conn = get_db()
 
-    rows = conn.execute(
-        """SELECT * FROM applications
-        WHERE user_id = ?
-        ORDER BY id DESC""",
-        (user_id,)
-    ).fetchall()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    job_id,
+                    job_title,
+                    company,
+                    job_url,
+                    match_score,
+                    status,
+                    cover_letter,
+                    notes,
+                    created_at
+                FROM applications
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+                """,
+                (user_id,)
+            )
 
-    conn.close()
+            applications = cur.fetchall()
 
-    return [dict(row) for row in rows]
+        return applications
 
-@router.patch("/{application_id}/status")
-def update_status(
+    finally:
+        conn.close()
+
+
+@router.get("/{application_id}")
+def get_application(
     application_id: int,
-    status: str,
     user_id: int = Depends(get_user_id)
 ):
     conn = get_db()
 
-    cur = conn.execute(
-        """UPDATE applications
-        SET status = ?
-        WHERE id = ? AND user_id = ?""",
-        (status.upper(), application_id, user_id)
-    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    job_id,
+                    job_title,
+                    company,
+                    job_url,
+                    match_score,
+                    status,
+                    cover_letter,
+                    notes,
+                    created_at
+                FROM applications
+                WHERE id = %s
+                AND user_id = %s
+                """,
+                (application_id, user_id)
+            )
 
-    conn.commit()
-    conn.close()
+            application = cur.fetchone()
 
-    if cur.rowcount == 0:
-        return {"message": "Application not found"}
+        if not application:
+            raise HTTPException(
+                status_code=404,
+                detail="Application not found"
+            )
 
-    return {"message": "Status updated"}
+        return application
+
+    finally:
+        conn.close()
