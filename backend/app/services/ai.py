@@ -14,8 +14,11 @@ KEY = os.getenv("OPENROUTER_API_KEY", "")
 
 MODEL = os.getenv(
     "OPENROUTER_MODEL",
-    "openai/gpt-oss-20b"
+    "openrouter/free"
 )
+print("OPENROUTER URL:", URL)
+print("OPENROUTER MODEL:", MODEL)
+print("OPENROUTER KEY EXISTS:", bool(KEY))
 
 
 def demo_analysis(cv: str, job: str) -> dict:
