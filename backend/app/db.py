@@ -63,7 +63,7 @@ def init_db():
                     notes TEXT DEFAULT '',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
-            )
+            """)
 
         conn.commit()
 
