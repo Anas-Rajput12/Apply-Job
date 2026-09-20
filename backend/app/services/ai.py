@@ -1,6 +1,8 @@
 import json
 import os
+
 import httpx
+from fastapi import HTTPException
 
 
 URL = os.getenv(
@@ -39,17 +41,20 @@ def demo_analysis(cv: str, job: str) -> dict:
     ]
 
     required = [
-        skill for skill in skills
+        skill
+        for skill in skills
         if skill in job_lower
     ]
 
     matched = [
-        skill for skill in required
+        skill
+        for skill in required
         if skill in cv_lower
     ]
 
     missing = [
-        skill for skill in required
+        skill
+        for skill in required
         if skill not in cv_lower
     ]
 
@@ -78,6 +83,7 @@ def demo_analysis(cv: str, job: str) -> dict:
 
 
 async def analyze_job(cv: str, job: str) -> dict:
+    # If API key is missing, use local demo analysis
     if not KEY:
         return demo_analysis(cv, job)
 
@@ -90,8 +96,9 @@ Rules:
 - Never invent experience.
 - Never invent education.
 - Never invent skills.
-- Never invent employers, dates or achievements.
+- Never invent employers, dates, or achievements.
 - Return ONLY valid JSON.
+- match_score must be a number from 0 to 100.
 
 Required JSON keys:
 match_score
@@ -115,6 +122,8 @@ JOB DESCRIPTION:
     headers = {
         "Authorization": f"Bearer {KEY}",
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://apply-job1.vercel.app",
+        "X-OpenRouter-Title": "ApplyAI"
     }
 
     body = {
@@ -125,39 +134,71 @@ JOB DESCRIPTION:
                 "content": prompt
             }
         ],
-        "temperature": 0.2,
+        "temperature": 0.2
     }
 
-    async with httpx.AsyncClient(timeout=90) as client:
-        response = await client.post(
-            URL,
-            headers=headers,
-            json=body
+    try:
+        async with httpx.AsyncClient(timeout=90) as client:
+            response = await client.post(
+                URL,
+                headers=headers,
+                json=body
+            )
+
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not connect to OpenRouter: {str(exc)}"
         )
 
-        if response.status_code != 200:
-            print(
-                "OPENROUTER STATUS:",
-                response.status_code
-            )
-            print(
-                "OPENROUTER RESPONSE:",
-                response.text
-            )
+    # Handle OpenRouter errors properly
+    if response.status_code != 200:
+        try:
+            error_data = response.json()
+        except Exception:
+            error_data = response.text
 
-        response.raise_for_status()
+        print("OPENROUTER STATUS:", response.status_code)
+        print("OPENROUTER RESPONSE:", error_data)
 
-    content = response.json()["choices"][0]["message"]["content"].strip()
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "OpenRouter API request failed",
+                "status_code": response.status_code,
+                "response": error_data
+            }
+        )
 
+    try:
+        data = response.json()
+
+        content = data["choices"][0]["message"]["content"].strip()
+
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+        print("OPENROUTER INVALID RESPONSE:", response.text)
+
+        raise HTTPException(
+            status_code=502,
+            detail=f"Invalid response from OpenRouter: {str(exc)}"
+        )
+
+    # Remove markdown JSON fences if model returns them
     if content.startswith("```"):
-        content = (
-            content
-            .replace("```json", "")
-            .replace("```", "")
-            .strip()
-        )
+        content = content.replace("```json", "")
+        content = content.replace("```", "")
+        content = content.strip()
 
-    return json.loads(content)
+    try:
+        return json.loads(content)
+
+    except json.JSONDecodeError as exc:
+        print("INVALID AI JSON:", content)
+
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI returned invalid JSON: {str(exc)}"
+        )
 
 
 async def generate_cover_letter(
@@ -166,12 +207,11 @@ async def generate_cover_letter(
     company: str = ""
 ) -> str:
 
+    # Fallback if API key is missing
     if not KEY:
         return f"""Dear Hiring Team at {company or 'the company'},
 
-I am writing to express my interest in the position. My background and project
-experience align with the requirements of this opportunity. Please review my
-attached CV for details about my skills and experience.
+I am writing to express my interest in the position. My background and project experience align with the requirements of this opportunity. Please review my attached CV for details about my skills and experience.
 
 I would welcome the opportunity to discuss how I can contribute to your team.
 
@@ -182,9 +222,18 @@ Candidate"""
 Write a concise, professional cover letter.
 
 Use ONLY facts contained in the CV.
-Do not invent experience, qualifications, employers, projects or achievements.
 
-Company: {company}
+Do not invent:
+- experience
+- qualifications
+- employers
+- projects
+- achievements
+- dates
+- skills
+
+Company:
+{company}
 
 CV:
 {cv[:10000]}
@@ -196,6 +245,8 @@ JOB DESCRIPTION:
     headers = {
         "Authorization": f"Bearer {KEY}",
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://apply-job1.vercel.app",
+        "X-OpenRouter-Title": "ApplyAI"
     }
 
     body = {
@@ -206,26 +257,60 @@ JOB DESCRIPTION:
                 "content": prompt
             }
         ],
-        "temperature": 0.4,
+        "temperature": 0.4
     }
 
-    async with httpx.AsyncClient(timeout=90) as client:
-        response = await client.post(
-            URL,
-            headers=headers,
-            json=body
+    try:
+        async with httpx.AsyncClient(timeout=90) as client:
+            response = await client.post(
+                URL,
+                headers=headers,
+                json=body
+            )
+
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not connect to OpenRouter: {str(exc)}"
         )
 
-        if response.status_code != 200:
-            print(
-                "OPENROUTER COVER LETTER STATUS:",
-                response.status_code
-            )
-            print(
-                "OPENROUTER COVER LETTER RESPONSE:",
-                response.text
-            )
+    if response.status_code != 200:
+        try:
+            error_data = response.json()
+        except Exception:
+            error_data = response.text
 
-        response.raise_for_status()
+        print(
+            "OPENROUTER COVER LETTER STATUS:",
+            response.status_code
+        )
 
-    return response.json()["choices"][0]["message"]["content"]
+        print(
+            "OPENROUTER COVER LETTER RESPONSE:",
+            error_data
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "OpenRouter API request failed",
+                "status_code": response.status_code,
+                "response": error_data
+            }
+        )
+
+    try:
+        data = response.json()
+
+        return data["choices"][0]["message"]["content"]
+
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+        print(
+            "OPENROUTER COVER LETTER INVALID RESPONSE:",
+            response.text
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail=f"Invalid response from OpenRouter: {str(exc)}"
+        )
