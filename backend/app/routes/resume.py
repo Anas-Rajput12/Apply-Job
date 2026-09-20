@@ -1,12 +1,15 @@
 import os
 import tempfile
+
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 
 from app.db import get_db
 from app.security import get_user_id
 from app.services.resume_parser import extract_pdf_text
 
+
 router = APIRouter()
+
 
 @router.post("/upload")
 async def upload_resume(
@@ -35,7 +38,8 @@ async def upload_resume(
     except Exception as exc:
         raise HTTPException(400, f"Could not read PDF: {exc}")
     finally:
-        os.unlink(path)
+        if os.path.exists(path):
+            os.unlink(path)
 
     if not text:
         raise HTTPException(
@@ -45,16 +49,26 @@ async def upload_resume(
 
     conn = get_db()
 
-    cur = conn.execute(
-        "INSERT INTO resumes(user_id, filename, text) VALUES(?, ?, ?)",
-        (user_id, filename, text)
-    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO resumes(user_id, filename, text)
+                VALUES(%s, %s, %s)
+                RETURNING id
+                """,
+                (user_id, filename, text)
+            )
 
-    conn.commit()
-    conn.close()
+            resume_id = cur.fetchone()["id"]
+
+        conn.commit()
+
+    finally:
+        conn.close()
 
     return {
-        "resume_id": cur.lastrowid,
+        "resume_id": resume_id,
         "filename": filename,
         "text": text
     }
