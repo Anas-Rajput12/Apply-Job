@@ -38,7 +38,7 @@ app.add_middleware(
     allow_origins=[
         "https://apply-job-z2af.vercel.app",
         "https://apply-job-xp27.vercel.app",
-        "https://localhost:8000/",
+        "https://localhost:8081",
         
     ],
     allow_credentials=False,
