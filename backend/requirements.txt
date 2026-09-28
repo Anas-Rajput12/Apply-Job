@@ -10,3 +10,4 @@ httpx
 pypdf
 python-dotenv
 psycopg[binary]
+openai
