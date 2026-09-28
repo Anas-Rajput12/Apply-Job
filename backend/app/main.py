@@ -17,7 +17,7 @@ app = FastAPI(
 
 ALLOWED_ORIGINS = [
     # Production frontend
-    "https://apply-job1.vercel.app",
+    "https://apply-job-z2af.vercel.app/",
 
     # Local development
     "http://localhost:3000",
