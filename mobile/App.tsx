@@ -18,7 +18,7 @@ import * as DocumentPicker from "expo-document-picker";
 
 /* ============================ API CONFIG ============================ */
 
-const PRODUCTION_API_URL = "https://apply-job-42os.vercel.app/";
+const PRODUCTION_API_URL = "https://apply-job-xp27.vercel.app/";
 const LOCAL_NATIVE_API_URL = "http://localhost:8000";
 const API_BASE_URL =
   Platform.OS === "web" ? PRODUCTION_API_URL : LOCAL_NATIVE_API_URL;
