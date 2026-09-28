@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+PyJWT
+passlib==1.7.4
+bcrypt==4.0.1
+httpx
+pypdf
+python-dotenv
+psycopg[binary]
